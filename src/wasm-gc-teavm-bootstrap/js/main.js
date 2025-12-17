@@ -394,6 +394,177 @@ window.main = async function() {
 		"splashURL": splashURL
 	};
 
+	logInfo("Preparing mods UI and executing any local mods...");
+
+	// --- Local runtime mod management (uploads via the early UI) ---
+	function getLocalMods() {
+		try {
+			return JSON.parse(localStorage.getItem('eagler_local_mods') || '[]');
+		}catch(ex){
+			logWarn('Failed to parse local mods: ' + ex);
+			return [];
+		}
+	}
+
+	function saveLocalMods(list) {
+		try {
+			localStorage.setItem('eagler_local_mods', JSON.stringify(list));
+		}catch(ex){
+			logWarn('Failed to save local mods: ' + ex);
+		}
+	}
+
+	function executeLocalMods() {
+		const mods = getLocalMods();
+		for(const m of mods) {
+			try {
+				const s = document.createElement('script');
+				s.type = 'text/javascript';
+				s.text = m.code;
+				document.head.appendChild(s);
+				logInfo('Executed local mod: ' + (m.id || m.name || '<unknown>'));
+			}catch(ex){
+				logError('Failed to execute local mod ' + (m.id || m.name || '<unknown>') + ' : ' + ex);
+			}
+		}
+	}
+
+	function _createModPanel(root) {
+		// panel container
+		const panel = document.createElement('div');
+		panel.id = 'eagler-mod-panel';
+		panel.style.position = 'fixed';
+		panel.style.right = '12px';
+		panel.style.bottom = '12px';
+		panel.style.zIndex = '2147483647';
+		panel.style.fontFamily = 'sans-serif';
+		panel.style.userSelect = 'none';
+
+		// toggle button
+		const btn = document.createElement('button');
+		btn.textContent = 'Mods';
+		btn.style.padding = '8px 12px';
+		btn.style.borderRadius = '6px';
+		btn.style.background = '#222';
+		btn.style.color = 'white';
+		btn.style.border = 'none';
+		btn.style.cursor = 'pointer';
+		btn.style.fontSize = '12px';
+
+		// panel box
+		const box = document.createElement('div');
+		box.style.display = 'none';
+		box.style.marginTop = '8px';
+		box.style.width = '360px';
+		box.style.maxHeight = '320px';
+		box.style.overflow = 'auto';
+		box.style.background = 'rgba(0,0,0,0.85)';
+		box.style.color = 'white';
+		box.style.padding = '12px';
+		box.style.borderRadius = '6px';
+		box.style.boxShadow = '0 0 8px rgba(0,0,0,0.5)';
+
+		// list container
+		const list = document.createElement('div');
+
+		// file input (hidden)
+		const fileInput = document.createElement('input');
+		fileInput.type = 'file';
+		fileInput.accept = '.js';
+		fileInput.style.display = 'none';
+
+		const insertBtn = document.createElement('button');
+		insertBtn.textContent = 'Insert (.js)';
+		insertBtn.style.marginRight = '8px';
+		insertBtn.style.padding = '6px 10px';
+		insertBtn.style.cursor = 'pointer';
+
+		const help = document.createElement('div');
+		help.style.fontSize = '11px';
+		help.style.opacity = '0.9';
+		help.style.marginTop = '8px';
+		help.textContent = 'Upload a single .js file; it will run before the game loader and persist in your browser.';
+
+		function refreshList() {
+			list.innerHTML = '';
+			const mods = getLocalMods();
+			if(mods.length === 0) {
+				const p = document.createElement('div');
+				p.style.opacity = '0.9';
+				p.textContent = 'No local mods installed';
+				list.appendChild(p);
+				return;
+			}
+			for(const m of mods) {
+				const row = document.createElement('div');
+				row.style.display = 'flex';
+				row.style.alignItems = 'center';
+				row.style.justifyContent = 'space-between';
+				row.style.marginBottom = '6px';
+				const t = document.createElement('div');
+				t.style.fontSize = '13px';
+				t.textContent = (m.name || m.id || '<mod>');
+				const r = document.createElement('div');
+				const del = document.createElement('button');
+				del.textContent = 'Remove';
+				del.style.padding = '4px 8px';
+				del.style.cursor = 'pointer';
+				del.onclick = function() {
+					const list = getLocalMods();
+					const n = list.filter(x => x.id !== m.id);
+					saveLocalMods(n);
+					refreshList();
+				};
+				r.appendChild(del);
+				row.appendChild(t);
+				row.appendChild(r);
+				list.appendChild(row);
+			}
+		}
+
+		insertBtn.onclick = function() { fileInput.click(); };
+		fileInput.onchange = function(ev) {
+			const f = ev.target.files && ev.target.files[0];
+			if(!f) return;
+			const reader = new FileReader();
+			reader.onload = function() {
+				const code = String(reader.result || '');
+				const id = (f.name || 'mod') + '@' + Date.now();
+				const mods = getLocalMods();
+				mods.push({ id: id, name: f.name, code: code });
+				saveLocalMods(mods);
+				executeLocalMods();
+				refreshList();
+				alert('Mod inserted and executed: ' + f.name);
+			};
+			reader.readAsText(f);
+		};
+
+		box.appendChild(list);
+		box.appendChild(insertBtn);
+		box.appendChild(fileInput);
+		box.appendChild(help);
+
+		btn.onclick = function() {
+			if(box.style.display === 'none') {
+				refreshList();
+				box.style.display = 'block';
+			}else{
+				box.style.display = 'none';
+			}
+		};
+
+		panel.appendChild(btn);
+		panel.appendChild(box);
+		root.appendChild(panel);
+		// make sure panel is visible on small screens
+		return panel;
+	}
+
+	// Execute any persisted mods and create the UI so the user can insert more before the loader runs
+	executeLocalMods();
+	try { _createModPanel(rootElement); }catch(ex){ logWarn('Failed to create mod panel: ' + ex); }
+
 	logInfo("Appending loader.js to document...");
 
 	const scriptElement = /** @type {HTMLScriptElement} */ (document.createElement("script"));
